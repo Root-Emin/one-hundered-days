@@ -1,111 +1,111 @@
 # Day 4 — SDLC Fundamentals: Practice
 
-**Ürün fikri:** *Vardiya* — 5–20 çalışanlı kafe/restoranlar için vardiya planlama ve puantaj uygulaması.
-**Kapsam:** Web paneli (işletme sahibi) + mobil görünüm (çalışan). Vardiya oluştur, çalışana bildir, izin/değişim taleplerini yönet, ay sonunda çalışılan saatleri muhasebeye CSV olarak aktar.
+**Product idea:** *Vardiya* — a shift-scheduling and timesheet app for cafés and restaurants with 5–20 employees.
+**Scope:** Web dashboard (owner) + mobile view (employee). Create shifts, notify employees, handle leave and swap requests, and export monthly worked hours to accounting as CSV.
 
 ---
 
-## Task 1 — Case Study: Hangi model? → **Hybrid**
+## Task 1 — Case Study: Which model? → **Hybrid**
 
-Seçim: **Hybrid** (puantaj/mevzuat tarafı Waterfall, planlama & UX tarafı Agile).
+Choice: **Hybrid** (Waterfall for the timesheet/compliance side, Agile for scheduling & UX).
 
-- **Ürünün iki farklı doğası var.** Vardiya planlama ekranı kullanıcıyla birlikte evrilecek (kullanım alışkanlıkları önceden bilinemez → Agile), ama puantaj çıktısı iş kanunu ve muhasebe formatına bağlı; kuralları baştan yazılabilir ve değişmez → o modül için Waterfall disiplini uygun.
-- **Hata maliyeti asimetrik.** Vardiya ekranında yanlış buton yeri = bir sprintlik düzeltme. Puantajda yanlış fazla mesai hesabı = işletmeye yasal/parasal zarar. Yüksek maliyetli kısmı önden tam spesifikasyonla (SRS + onay) kilitlemek mantıklı.
-- **Müşteri erişimi sınırlı ama var.** 3 pilot kafe ile 2 haftada bir demo yapılabilir; günlük müşteri temsilcisi (saf Agile'ın istediği) yok. Bu, sprint'li ama hafif ritüelli bir Hybrid'e işaret ediyor.
-- **Küçük ekip, kısa süre.** 3 kişilik ekip; saf Waterfall'ın ürettiği doküman yükünü taşıyamaz, saf Agile'ın gerektirdiği otomasyon/olgunluk da yok. Hybrid, dokümantasyonu sadece riskli modülde zorunlu tutarak yükü dengeliyor.
-- **Pazar belirsizliği orta seviyede.** "Kafeler vardiyayı WhatsApp'tan yönetiyor" varsayımı doğrulanmalı; erken sürüm çıkarıp geri bildirim almak şart. Waterfall'ın 4 ay sonra tek seferde teslim modeli bu doğrulamayı çok geciktirir.
+- **The product has two different natures.** The shift-scheduling screen will evolve alongside its users (usage habits can't be known up front → Agile), but the timesheet output is bound to labor law and accounting formats; its rules can be written down at the start and won't change → Waterfall discipline fits that module.
+- **The cost of error is asymmetric.** A misplaced button on the scheduling screen = one sprint of rework. A wrong overtime calculation in the timesheet = legal and financial damage to the business. It makes sense to lock down the high-cost part up front with a full specification (SRS + sign-off).
+- **Customer access is limited but real.** Demos are possible every two weeks with 3 pilot cafés; there is no daily on-site customer representative (which pure Agile wants). This points to a Hybrid with sprints but lightweight ceremonies.
+- **Small team, short timeline.** A 3-person team can't carry the documentation load that pure Waterfall produces, and it also lacks the automation/maturity that pure Agile requires. Hybrid balances the load by making documentation mandatory only in the risky module.
+- **Market uncertainty is moderate.** The assumption that "cafés manage shifts over WhatsApp" needs validating; shipping an early version and collecting feedback is essential. Waterfall's deliver-once-after-4-months model would delay that validation far too long.
 
-**Kısaca:** Sabit ve pahalı-yanlış olan kısmı önden tasarla, belirsiz ve ucuz-yanlış olan kısmı iterasyonla keşfet.
+**In short:** Design the fixed, expensive-to-get-wrong part up front; discover the uncertain, cheap-to-get-wrong part through iteration.
 
 ---
 
-## Task 2 — Phase Checklist (faz başına beklenen artifact'lar)
+## Task 2 — Phase Checklist (expected artifacts per phase)
 
 ### 1. Planning / Discovery
-- [ ] Vizyon ve kapsam dokümanı (1 sayfa: problem, hedef kullanıcı, "yapmayacaklarımız")
-- [ ] Paydaş listesi (işletme sahibi, çalışan, muhasebeci)
-- [ ] Basit iş gerekçesi: hedef 50 işletme × ₺X/ay, geliştirme maliyeti tahmini
-- [ ] Yüksek seviye yol haritası (MVP → v1 → v1.5)
-- [ ] Varsayım ve risk listesi (ilk hali)
+- [ ] Vision and scope document (1 page: problem, target user, "what we won't build")
+- [ ] Stakeholder list (business owner, employee, accountant)
+- [ ] Simple business case: target of 50 businesses × ₺X/month, estimated development cost
+- [ ] High-level roadmap (MVP → v1 → v1.5)
+- [ ] Assumption and risk list (first draft)
 
 ### 2. Requirements / Analysis
-- [ ] Ürün backlog'u (user story formatında) — Agile tarafı
-- [ ] Puantaj modülü için **SRS**: fazla mesai, hafta tatili, gece vardiyası kuralları — Waterfall tarafı
-- [ ] Her story için kabul kriterleri (Given/When/Then)
-- [ ] 2 persona (İşletme sahibi Deniz, part-time barista Ece)
-- [ ] Gereksinim izlenebilirlik matrisi (yalnızca puantaj modülü için)
+- [ ] Product backlog (in user story format) — the Agile side
+- [ ] **SRS** for the timesheet module: overtime, weekly rest day, night shift rules — the Waterfall side
+- [ ] Acceptance criteria for each story (Given/When/Then)
+- [ ] 2 personas (Deniz, the café owner; Ece, the part-time barista)
+- [ ] Requirements traceability matrix (for the timesheet module only)
 
 ### 3. Design
-- [ ] Sistem mimarisi diyagramı (istemci / API / veritabanı / bildirim servisi)
-- [ ] Veri modeli — ERD (Employee, Shift, Availability, LeaveRequest, TimeEntry)
-- [ ] API sözleşmesi (OpenAPI/Swagger taslağı)
-- [ ] Wireframe + tıklanabilir prototip (haftalık vardiya takvimi ekranı)
-- [ ] NFR listesi: 20 kullanıcıya kadar <2sn yüklenme, KVKK uyumlu veri saklama
-- [ ] Tehdit modeli taslağı (kimlik doğrulama, yetkilendirme: çalışan başkasının maaşını görmemeli)
+- [ ] System architecture diagram (client / API / database / notification service)
+- [ ] Data model — ERD (Employee, Shift, Availability, LeaveRequest, TimeEntry)
+- [ ] API contract (OpenAPI/Swagger draft)
+- [ ] Wireframes + clickable prototype (weekly shift calendar screen)
+- [ ] NFR list: under 2s load time for up to 20 users, KVKK-compliant data retention
+- [ ] Draft threat model (authentication, authorization: an employee must not see another's pay)
 
 ### 4. Implementation
-- [ ] Kaynak kod + repo kuralları (branch stratejisi, commit formatı)
-- [ ] Code review kayıtları (PR'lar)
-- [ ] Birim testleri (özellikle puantaj hesaplama fonksiyonları için)
-- [ ] CI pipeline yapılandırması
-- [ ] Veritabanı migration script'leri
-- [ ] Changelog / sürüm notları taslağı
+- [ ] Source code + repo conventions (branching strategy, commit format)
+- [ ] Code review records (PRs)
+- [ ] Unit tests (especially for the timesheet calculation functions)
+- [ ] CI pipeline configuration
+- [ ] Database migration scripts
+- [ ] Draft changelog / release notes
 
 ### 5. Testing
-- [ ] Test planı (kapsam, ortamlar, çıkış kriterleri)
-- [ ] Test senaryoları + puantaj için kenar durum tablosu (ay ortası işe giriş, gece 00:00'ı aşan vardiya, resmi tatil)
-- [ ] Hata kayıtları (bug report) ve önem seviyeleri
-- [ ] Regresyon test seti (otomatik)
-- [ ] UAT onay formu — pilot kafenin imzası
-- [ ] Muhasebe CSV çıktısının gerçek muhasebeciyle doğrulama raporu
+- [ ] Test plan (scope, environments, exit criteria)
+- [ ] Test cases + an edge-case table for the timesheet (mid-month hire, shift crossing midnight, public holidays)
+- [ ] Bug reports and severity levels
+- [ ] Regression test suite (automated)
+- [ ] UAT sign-off form — signed by the pilot café
+- [ ] Verification report of the accounting CSV export, reviewed with a real accountant
 
 ### 6. Deployment
-- [ ] Sürüm notları (release notes)
-- [ ] Runbook: nasıl deploy edilir, nasıl geri alınır
-- [ ] Rollback planı ve tetikleyici koşulları
-- [ ] Ortam/altyapı yapılandırması (env değişkenleri, IaC)
-- [ ] İzleme ve alarm kurulumu (hata oranı, API gecikmesi, başarısız bildirim)
-- [ ] Kullanıcı kılavuzu / onboarding e-postası
+- [ ] Release notes
+- [ ] Runbook: how to deploy, how to roll back
+- [ ] Rollback plan and its trigger conditions
+- [ ] Environment/infrastructure configuration (env variables, IaC)
+- [ ] Monitoring and alerting setup (error rate, API latency, failed notifications)
+- [ ] User guide / onboarding email
 
 ### 7. Maintenance / Operations
-- [ ] Destek ve SLA dokümanı (yanıt süresi taahhüdü)
-- [ ] Olay (incident) kayıtları ve postmortem şablonu
-- [ ] Kullanım analitiği raporu (aylık: aktif işletme, oluşturulan vardiya sayısı)
-- [ ] Teknik borç kaydı
-- [ ] Geri bildirimden beslenen iyileştirme backlog'u
+- [ ] Support and SLA document (response time commitment)
+- [ ] Incident records and postmortem template
+- [ ] Usage analytics report (monthly: active businesses, number of shifts created)
+- [ ] Technical debt register
+- [ ] Improvement backlog fed by user feedback
 
 ---
 
 ## Task 3 — Risk Flag
 
-**En riskli faz: Requirements / Analysis.**
-Özellikle puantaj kurallarının çıkarılması. Nedeni: bu fazdaki bir hata sessizdir — kod çalışır, ekran açılır, CSV üretilir, ama rakam yanlıştır. Hata aylar sonra muhasebede ortaya çıkar; o noktada yanlış veri zaten üretilmiş, müşteri güveni ve muhtemelen yasal sorumluluk devrededir. Ayrıca gereksinim hatasının düzeltme maliyeti, kodlama fazındaki bir hataya göre kat kat yüksektir çünkü tasarım, kod, test ve üretilmiş verinin hepsi geriye dönük etkilenir.
+**Riskiest phase: Requirements / Analysis.**
+Specifically, eliciting the timesheet rules. Why: a mistake in this phase is silent — the code runs, the screen opens, the CSV is produced, but the numbers are wrong. The error surfaces months later in accounting; by then the incorrect data has already been generated, customer trust is damaged, and legal liability is likely in play. On top of that, the cost of fixing a requirements error is many times higher than fixing one in the implementation phase, because design, code, tests, and already-produced data are all affected retroactively.
 
-**Mitigation (azaltma planı):**
-1. **Uzman doğrulaması:** Puantaj kurallarını yazdıktan sonra bir mali müşavire ücretli 2 saatlik review yaptır; onaylı SRS'i referans belge olarak sakla.
-2. **Örnekle spesifikasyon:** Soyut kural cümlesi yerine 15 gerçek senaryoyu tablo halinde yaz (girdi vardiyalar → beklenen çıktı saat/ücret). Bu tablo aynı zamanda test senaryosu olur.
-3. **Erken ince dilim (thin vertical slice):** İlk 2 haftada tek bir kafenin gerçek geçen ay verisiyle uçtan uca puantaj üret; sonucu kafenin elle hesapladığı bordroyla karşılaştır.
-4. **İzlenebilirlik:** Her puantaj kuralına ID ver (PAY-01, PAY-02...) ve kod + test dosyalarında bu ID'yi referansla; bir kural değişince etkilenen her yer 1 aramada bulunsun.
-5. **Değişiklik kontrolü:** Puantaj modülünde gereksinim değişikliği ancak yazılı onayla girsin; koridor konuşmasıyla kural değişmesin.
+**Mitigation plan:**
+1. **Expert validation:** After writing the timesheet rules, pay a certified accountant for a 2-hour review; keep the approved SRS as the reference document.
+2. **Specification by example:** Instead of abstract rule statements, write out 15 real scenarios in a table (input shifts → expected output hours/pay). That table doubles as the test suite.
+3. **Early thin vertical slice:** In the first 2 weeks, produce an end-to-end timesheet from one café's real data for the previous month; compare the result against the payroll they calculated by hand.
+4. **Traceability:** Give every timesheet rule an ID (PAY-01, PAY-02, …) and reference that ID in the code and test files, so that when a rule changes, every affected place is found in a single search.
+5. **Change control:** Requirement changes in the timesheet module only enter through written approval; no rule changes via hallway conversation.
 
 ---
 
-## Task 4 — Teach-back Script (~1 dk 45 sn)
+## Task 4 — Teach-back Script (~1 min 45 sec)
 
-> "SDLC'yi merak ediyorsun ya —aslında bir kafe açmakla neredeyse aynı şey.
+> "So you're curious about SDLC — it's almost the same thing as opening a café.
 >
-> Diyelim kafe açacaksın. Önce oturup düşünüyorsun: kimin için, nerede, ne kadar paran var? Buna **planlama** diyoruz.
+> Say you're going to open one. First you sit down and think: who is it for, where will it be, how much money do you have? We call that **planning**.
 >
-> Sonra tam olarak ne istediğini listeliyorsun: 30 kişilik oturma alanı, espresso makinesi, kahvaltı da olsun. Bu **gereksinim analizi** — yazılımda da önce 'bu program tam olarak ne yapacak' sorusunu netleştiriyoruz.
+> Then you list exactly what you want: seating for 30, an espresso machine, breakfast on the menu too. That's **requirements analysis** — in software we also start by pinning down 'what exactly is this program going to do.'
 >
-> Ardından mimarla oturup planı çiziyorsun: mutfak nereye, priz nereye, tesisat nasıl geçecek. Bu **tasarım**. Yazılımda da kod yazmadan önce sistemin şeması çiziliyor; çünkü duvar örüldükten sonra prizin yerini değiştirmek pahalı.
+> Next you sit with an architect and draw the plan: where the kitchen goes, where the outlets go, how the plumbing runs. That's **design**. In software, too, the system's blueprint is drawn before any code is written — because moving an outlet after the wall is up is expensive.
 >
-> Sonra inşaat başlıyor: ustalar geliyor, iş yapılıyor. Bu **geliştirme**, yani asıl kod yazma kısmı. İnsanların 'yazılım' deyince aklına gelen tek şey bu, ama gördüğün gibi toplamın sadece bir parçası.
+> Then construction starts: the workers arrive, the work gets done. That's **development**, the actual coding part. It's the only thing people picture when they hear 'software,' but as you can see, it's just one piece of the whole.
 >
-> Sonra açılıştan önce her şeyi deniyorsun: makine çalışıyor mu, su akıyor mu, sipariş sistemi doğru fiş basıyor mu? Bu **test**. Amaç, müşteri bulmadan önce hatayı biz bulalım.
+> Then, before opening day, you try everything: does the machine work, does the water run, does the order system print the right receipt? That's **testing**. The point is for us to find the bugs before the customer does.
 >
-> Sonra kapıyı açıyorsun — **yayına alma**. Ve iş burada bitmiyor: her gün bakım var, müşteri 'keşke şu da olsa' diyor, bozulan oluyor. Buna **bakım** diyoruz ve bir ürünün ömrünün en uzun kısmı budur.
+> Then you open the doors — **deployment**. And the job doesn't end there: there's daily upkeep, customers saying 'I wish it also had this,' things breaking. We call that **maintenance**, and it's the longest stretch of a product's life.
 >
-> SDLC bu altı adımın adı, hepsi bu. Farklı çalışma biçimleri de var: bazı ekipler her adımı sırayla bitirip diğerine geçiyor — *Waterfall*. Bazıları küçük parçalar halinde ilerleyip her 2 haftada bir çalışan bir şey gösteriyor — *Agile*. Çoğu ekip de ikisini karıştırıyor.
+> SDLC is just the name for those six steps. There are different ways of working through them too: some teams finish each step completely before moving to the next — *Waterfall*. Others move in small pieces and show something working every 2 weeks — *Agile*. And most teams mix the two.
 >
-> Tek cümleyle: SDLC, 'otur bir şeyler kodla' ile 'güvenilir bir ürün teslim et' arasındaki farkın adı."
+> In one sentence: SDLC is the name for the difference between 'sit down and code something' and 'ship a product people can rely on.'"
