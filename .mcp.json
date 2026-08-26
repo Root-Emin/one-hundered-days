@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "masterfabric-academy": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "tsx",
+        "mcp/mcp.ts"
+      ],
+      "env": {}
+    }
+  }
+}
