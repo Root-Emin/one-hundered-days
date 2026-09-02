@@ -1,0 +1,56 @@
+// Two services, so metadata propagation has somewhere to propagate to.
+//
+//   EdgeService    faces the caller; it calls ProfileService internally
+//   ProfileService an internal service that trusts the propagated identity
+syntax = "proto3";
+
+package greeting.v1;
+
+option go_package = "example.com/onehundredday/Section-13-gRPC-And-Protocol-Buffers-Protobuf-definitions-gRPC-services-clients-interceptors-and-metadata/Day-64/gen/greeting/v1;greetingv1";
+
+// EdgeService is the public entry point.
+//
+// Every RPC requires an "authorization: Bearer <token>" metadata entry.
+// Missing or invalid credentials return UNAUTHENTICATED; a valid identity
+// without the required role returns PERMISSION_DENIED.
+service EdgeService {
+  rpc Greet(GreetRequest) returns (GreetResponse);
+
+  // Panic exists to prove the recovery interceptor works. A real service
+  // would not ship this.
+  rpc Panic(PanicRequest) returns (PanicResponse);
+}
+
+// ProfileService is internal: it is never exposed publicly, and it trusts the
+// identity metadata forwarded by the edge.
+service ProfileService {
+  rpc GetProfile(GetProfileRequest) returns (GetProfileResponse);
+}
+
+message GreetRequest {
+  string name = 1;
+}
+
+message GreetResponse {
+  string message = 1;
+
+  // Echoed back so the demo can show which request id travelled the whole way.
+  string request_id = 2;
+
+  // The user the profile service resolved from the propagated metadata.
+  string resolved_user = 3;
+}
+
+message PanicRequest {}
+
+message PanicResponse {}
+
+message GetProfileRequest {
+  string user_id = 1;
+}
+
+message GetProfileResponse {
+  string user_id = 1;
+  string display_name = 2;
+  string tier = 3;
+}

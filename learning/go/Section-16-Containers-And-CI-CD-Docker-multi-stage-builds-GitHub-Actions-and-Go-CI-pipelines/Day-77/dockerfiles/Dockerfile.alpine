@@ -1,0 +1,51 @@
+# syntax=docker/dockerfile:1
+#
+# The pragmatic middle: alpine has a shell, which means `docker exec -it ...
+# sh` works during an incident.
+#
+# The trade-off, stated honestly:
+#   + you can get a shell in a broken container at 3am
+#   - a shell is also what an attacker with code execution wants
+#   - ~8 MB base, and apk packages to keep patched
+#
+# Many teams ship distroless and attach an ephemeral debug container
+# (kubectl debug) when they need a shell. That is the better answer where the
+# platform supports it.
+
+FROM golang:1.26-alpine AS builder
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+ARG VERSION=dev
+
+RUN CGO_ENABLED=0 GOOS=linux go build \
+      -trimpath \
+      -ldflags="-s -w -X main.version=${VERSION}" \
+      -o /out/api \
+      ./Section-16-Containers-And-CI-CD-Docker-multi-stage-builds-GitHub-Actions-and-Go-CI-pipelines/Day-77/cmd/api
+
+FROM alpine:3.21
+
+# Patch the base packages in the same layer they are installed, and pin
+# nothing that cannot be reproduced: an unpatched base is the most common
+# source of image CVEs.
+RUN apk add --no-cache ca-certificates tzdata wget \
+    && addgroup -g 65532 -S app \
+    && adduser -u 65532 -S app -G app
+
+COPY --from=builder /out/api /api
+
+USER app:app
+
+EXPOSE 8080
+
+# alpine HAS a shell, so a conventional health check works here.
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:8080/healthz || exit 1
+
+ENTRYPOINT ["/api"]

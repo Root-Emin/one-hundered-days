@@ -1,0 +1,13 @@
+# Scrape config for the local stack.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: day80-api
+    metrics_path: /metrics
+    static_configs:
+      # "api" resolves through the compose network.
+      - targets: ["api:8080"]
+        labels:
+          env: local

@@ -1,0 +1,81 @@
+// Protocol Buffers schema for the catalog domain.
+//
+// The .proto file is the source of truth: Go, TypeScript, Python and Java are
+// all generated from it, so the contract cannot drift between services.
+syntax = "proto3";
+
+package catalog.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// go_package tells protoc-gen-go where the generated code lives and what to
+// call the package. The part after ';' is the Go package name.
+option go_package = "example.com/onehundredday/Section-13-gRPC-And-Protocol-Buffers-Protobuf-definitions-gRPC-services-clients-interceptors-and-metadata/Day-61/gen/catalog/v1;catalogv1";
+
+// Money is a value object, not a float. Currency travels with the amount so a
+// consumer cannot mistake 1000 kurus for 1000 lira.
+message Money {
+  // Amount in minor units (cents, kurus).
+  int64 cents = 1;
+  // ISO 4217 code, for example "EUR".
+  string currency = 2;
+}
+
+// Availability is an enum. In proto3 the first value must be zero, and by
+// convention it is the UNSPECIFIED case: a field the sender never set decodes
+// as UNSPECIFIED rather than as a meaningful value.
+enum Availability {
+  AVAILABILITY_UNSPECIFIED = 0;
+  AVAILABILITY_IN_STOCK = 1;
+  AVAILABILITY_BACKORDER = 2;
+  AVAILABILITY_DISCONTINUED = 3;
+}
+
+// Product is the main message.
+//
+// Field numbers are the wire format. They are permanent: renaming a field is
+// harmless, renumbering it is a breaking change, and a deleted number must be
+// reserved so it is never reused.
+message Product {
+  int64 id = 1;
+  string sku = 2;
+  string name = 3;
+  Money price = 4;
+  int32 stock = 5;
+  Availability availability = 6;
+  repeated string tags = 7;
+  map<string, string> attributes = 8;
+  google.protobuf.Timestamp created_at = 9;
+
+  // Field 10 held "legacy_category" (a string) until v1.3. The number and the
+  // name are reserved so a future field cannot silently reuse either, which
+  // would make old and new clients disagree about what the bytes mean.
+  reserved 10;
+  reserved "legacy_category";
+
+  // Added in v1.4. Old clients that do not know this field keep it as unknown
+  // data and round-trip it untouched - that is what makes protobuf changes
+  // backward and forward compatible.
+  optional string supplier_code = 11;
+}
+
+// Order shows message composition and nesting.
+message Order {
+  message Line {
+    string sku = 1;
+    int32 quantity = 2;
+    Money unit_price = 3;
+  }
+
+  int64 id = 1;
+  string customer_email = 2;
+  repeated Line lines = 3;
+  Money total = 4;
+  google.protobuf.Timestamp placed_at = 5;
+}
+
+// Catalog is a container used to demonstrate serializing a batch.
+message Catalog {
+  repeated Product products = 1;
+  int32 revision = 2;
+}

@@ -1,0 +1,127 @@
+# Release: triggered by pushing a v* tag.
+#
+#   make tag VERSION=v0.1.0
+#   git push origin v0.1.0
+#
+# CI (ci.yml) proves the commit is good. This workflow turns it into
+# artifacts: binaries with checksums, and a multi-arch image.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: learning/go/go.mod
+          cache: true
+          cache-dependency-path: learning/go/go.sum
+
+      # A tag must never be released without the same checks a PR gets.
+      - name: Vet and test
+        working-directory: learning/go
+        run: |
+          go vet ./...
+          go test -race -count=1 ./...
+
+  binaries:
+    name: binaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [verify]
+
+    permissions:
+      contents: write   # needed to create the GitHub release
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: learning/go/go.mod
+          cache: true
+          cache-dependency-path: learning/go/go.sum
+
+      - name: Build every platform
+        working-directory: learning/go/Section-16-Containers-And-CI-CD-Docker-multi-stage-builds-GitHub-Actions-and-Go-CI-pipelines/Day-80
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: make release
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            learning/go/Section-16-Containers-And-CI-CD-Docker-multi-stage-builds-GitHub-Actions-and-Go-CI-pipelines/Day-80/dist/*
+          generate_release_notes: true
+          draft: false
+
+  image:
+    name: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [verify]
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/day80-api
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: learning/go
+          file: learning/go/Section-16-Containers-And-CI-CD-Docker-multi-stage-builds-GitHub-Actions-and-Go-CI-pipelines/Day-80/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
+          provenance: true
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Scan the released image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ghcr.io/${{ github.repository }}/day80-api:${{ github.ref_name }}
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL

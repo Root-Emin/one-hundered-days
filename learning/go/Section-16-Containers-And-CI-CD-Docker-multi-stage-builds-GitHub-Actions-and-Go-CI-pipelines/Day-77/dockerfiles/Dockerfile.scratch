@@ -1,0 +1,48 @@
+# syntax=docker/dockerfile:1
+#
+# The smallest possible image: FROM scratch is an empty filesystem.
+#
+# What you must add back by hand, and what breaks without it:
+#   ca-certificates  -> every outbound HTTPS call fails with x509 errors
+#   /etc/passwd      -> the process has no user name (USER 65532 still works)
+#   tzdata           -> time.LoadLocation fails; UTC still works
+#
+# Worth it when the image is a sidecar or a job and image size genuinely
+# matters. For a normal service, distroless/static costs ~2 MB more and gives
+# you all three.
+
+FROM golang:1.26-alpine AS builder
+
+RUN apk add --no-cache ca-certificates tzdata
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+ARG VERSION=dev
+
+RUN CGO_ENABLED=0 GOOS=linux go build \
+      -trimpath \
+      -ldflags="-s -w -X main.version=${VERSION}" \
+      -o /out/api \
+      ./Section-16-Containers-And-CI-CD-Docker-multi-stage-builds-GitHub-Actions-and-Go-CI-pipelines/Day-77/cmd/api
+
+# A non-root user must be created in the builder, because scratch has no
+# adduser - there is no shell to run it with.
+RUN echo "app:x:65532:65532:app:/:/sbin/nologin" > /out/passwd
+
+FROM scratch
+
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
+COPY --from=builder /out/passwd /etc/passwd
+COPY --from=builder /out/api /api
+
+USER 65532:65532
+
+EXPOSE 8080
+
+ENTRYPOINT ["/api"]

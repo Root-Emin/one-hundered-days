@@ -1,0 +1,5 @@
+# Local dev databases and build artifacts created by running the day programs.
+data/
+*.db
+*.db-wal
+*.db-shm

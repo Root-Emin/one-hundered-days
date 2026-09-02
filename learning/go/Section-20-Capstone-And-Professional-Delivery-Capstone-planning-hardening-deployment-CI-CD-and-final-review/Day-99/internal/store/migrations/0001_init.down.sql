@@ -1,0 +1,9 @@
+DROP INDEX IF EXISTS idx_outbox_unpublished;
+DROP TABLE IF EXISTS outbox;
+DROP TABLE IF EXISTS click_daily;
+DROP INDEX IF EXISTS idx_clicks_code;
+DROP TABLE IF EXISTS clicks;
+DROP INDEX IF EXISTS idx_api_keys_hash;
+DROP TABLE IF EXISTS api_keys;
+DROP INDEX IF EXISTS idx_links_owner;
+DROP TABLE IF EXISTS links;

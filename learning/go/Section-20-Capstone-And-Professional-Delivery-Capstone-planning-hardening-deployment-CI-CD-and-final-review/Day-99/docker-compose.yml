@@ -1,0 +1,68 @@
+# A production-like local stack.
+#
+# "Production-like" is the point: the same image, the same configuration
+# mechanism, the same non-root user, the same volume. A compose file that runs
+# `go run` with dev defaults proves nothing about the thing you deploy.
+
+services:
+  linkr:
+    build:
+      context: ../../..
+      dockerfile: Section-20-Capstone-And-Professional-Delivery-Capstone-planning-hardening-deployment-CI-CD-and-final-review/Day-99/Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+        COMMIT: ${COMMIT:-none}
+        COMMIT_TIME: ${COMMIT_TIME:-unknown}
+
+    image: linkr:${VERSION:-dev}
+
+    ports:
+      - "8099:8096"
+      # The metrics port is NOT published. It binds to 127.0.0.1 inside the
+      # container, so it is reachable from a sidecar or an exec and from
+      # nowhere else - the same shape production uses.
+
+    environment:
+      LINKR_ADDR: ":8096"
+      # Explicit, even though the image defaults to it: a deployment manifest
+      # that relies on a default in the Dockerfile makes the reader open two
+      # files to answer "is /metrics public?".
+      LINKR_METRICS_ADDR: "127.0.0.1:9096"
+      LINKR_BASE_URL: "http://localhost:8099"
+      LINKR_DATABASE_URL: "/data/linkr.db"
+      LINKR_ENV: "production"
+      LINKR_LOG_LEVEL: "info"
+      LINKR_RATE_LIMIT: "600"
+
+    volumes:
+      # The database survives a container restart. Without this, every deploy
+      # is a data loss incident.
+      - linkr-data:/data
+
+    # 45s: longer than the 15s shutdown grace plus the drain delay, so a
+    # rolling deploy finishes its in-flight requests instead of being killed
+    # in the middle of them.
+    stop_grace_period: 45s
+
+    healthcheck:
+      # /healthz, not /readyz: this decides whether to RESTART the container,
+      # and restarting because the database is down does not fix the database.
+      test: ["CMD", "/usr/local/bin/linkr", "-version"]
+      interval: 10s
+      timeout: 2s
+      retries: 3
+      start_period: 5s
+
+    restart: unless-stopped
+
+    # Defence in depth, all cheap:
+    read_only: true              # the binary cannot rewrite itself
+    security_opt:
+      - no-new-privileges:true   # no setuid escalation
+    cap_drop:
+      - ALL                      # it needs no capabilities at all
+    tmpfs:
+      - /tmp:size=16m
+
+volumes:
+  linkr-data:

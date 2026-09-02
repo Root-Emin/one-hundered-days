@@ -1,0 +1,88 @@
+// Notes API, exposed over gRPC and over HTTP/JSON by the same service layer.
+syntax = "proto3";
+
+package notes.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "example.com/onehundredday/Section-13-gRPC-And-Protocol-Buffers-Protobuf-definitions-gRPC-services-clients-interceptors-and-metadata/Day-65/gen/notes/v1;notesv1";
+
+// NotesService is the MVP's second transport. Every method maps one-to-one to
+// a REST endpoint served by the same internal service - see README.md for the
+// parity table.
+//
+// Authentication: every RPC requires "authorization: Bearer <token>" metadata.
+// Missing or invalid credentials return UNAUTHENTICATED.
+// A note that belongs to another user returns PERMISSION_DENIED, not NOT_FOUND.
+service NotesService {
+  // CreateNote stores a note owned by the authenticated caller.
+  //
+  // Errors: INVALID_ARGUMENT on validation failure.
+  rpc CreateNote(CreateNoteRequest) returns (CreateNoteResponse);
+
+  // GetNote returns one note.
+  //
+  // Errors: NOT_FOUND, PERMISSION_DENIED.
+  rpc GetNote(GetNoteRequest) returns (GetNoteResponse);
+
+  // ListNotes returns the caller's notes, newest first.
+  rpc ListNotes(ListNotesRequest) returns (ListNotesResponse);
+
+  // ArchiveNote is idempotent: archiving an archived note succeeds.
+  rpc ArchiveNote(ArchiveNoteRequest) returns (ArchiveNoteResponse);
+
+  // DeleteNote removes a note. Idempotent.
+  rpc DeleteNote(DeleteNoteRequest) returns (DeleteNoteResponse);
+}
+
+message Note {
+  int64 id = 1;
+  string owner_id = 2;
+  string title = 3;
+  string body = 4;
+  bool archived = 5;
+  google.protobuf.Timestamp created_at = 6;
+}
+
+message CreateNoteRequest {
+  string title = 1;
+  string body = 2;
+}
+
+message CreateNoteResponse {
+  Note note = 1;
+}
+
+message GetNoteRequest {
+  int64 id = 1;
+}
+
+message GetNoteResponse {
+  Note note = 1;
+}
+
+message ListNotesRequest {
+  int32 page_size = 1;
+  bool include_archived = 2;
+}
+
+message ListNotesResponse {
+  repeated Note notes = 1;
+  int32 total_size = 2;
+}
+
+message ArchiveNoteRequest {
+  int64 id = 1;
+}
+
+message ArchiveNoteResponse {
+  Note note = 1;
+}
+
+message DeleteNoteRequest {
+  int64 id = 1;
+}
+
+message DeleteNoteResponse {
+  bool deleted = 1;
+}

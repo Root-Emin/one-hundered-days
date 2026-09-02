@@ -1,0 +1,27 @@
+{
+  "total_minimum": 70.0,
+  "gates": [
+    {
+      "path_suffix": "internal/todo",
+      "minimum": 80.0,
+      "reason": "the service layer: ownership and validation live here"
+    },
+    {
+      "path_suffix": "internal/httpapi",
+      "minimum": 70.0,
+      "reason": "auth middleware and status mapping"
+    }
+  ],
+  "ignore": [
+    {
+      "path_suffix": "cmd/api",
+      "minimum": 0,
+      "reason": "wiring only; exercised by the integration suite, not unit tested"
+    },
+    {
+      "path_suffix": "internal/testsupport",
+      "minimum": 0,
+      "reason": "test helpers: covered by being used, not by tests of their own"
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+#!/bin/sh
+# Pre-commit: fast checks only.
+#
+# The rule that keeps a hook installed: it must finish in about a second. A
+# hook that runs the full suite gets bypassed with --no-verify within a week,
+# and then it protects nothing. Formatting and vet are cheap; the race detector
+# and the integration tests belong in CI.
+#
+# Install with: make hooks
+
+set -e
+
+DAY="Section-19-Team-Practices-And-Tooling-Code-review-documentation-Makefile-DX-release-versioning-and-team-habits/Day-93"
+
+# Only the staged Go files, so the hook does not punish you for unrelated work
+# already in the tree.
+staged=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$' || true)
+
+if [ -z "$staged" ]; then
+  exit 0
+fi
+
+echo "pre-commit: gofmt"
+
+unformatted=$(gofmt -l $staged)
+
+if [ -n "$unformatted" ]; then
+  echo "these files are not formatted:"
+  echo "$unformatted"
+  echo
+  echo "run: make fmt"
+  exit 1
+fi
+
+echo "pre-commit: go vet"
+go vet "./$DAY/..."
+
+echo "pre-commit: go build"
+go build "./$DAY/..."
+
+echo "pre-commit: ok"

@@ -1,0 +1,56 @@
+# The MVP stack for local runs.
+#
+#   cd learning/go
+#   docker compose -f Section-16-Containers-And-CI-CD-Docker-multi-stage-builds-GitHub-Actions-and-Go-CI-pipelines/Day-80/docker-compose.yml up --build
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: Section-16-Containers-And-CI-CD-Docker-multi-stage-builds-GitHub-Actions-and-Go-CI-pipelines/Day-80/Dockerfile
+      args:
+        VERSION: "0.1.0-local"
+        COMMIT: "local"
+    image: day80-api:local
+    ports:
+      - "${API_PORT:-8080}:8080"
+    environment:
+      PORT: "8080"
+      LOG_FORMAT: "${LOG_FORMAT:-json}"
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
+      SHUTDOWN_TIMEOUT: "15s"
+      DRAIN_DELAY: "2s"
+    stop_grace_period: 25s
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "/api", "-healthcheck"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.50"
+        reservations:
+          memory: 32M
+
+  # A scrape target for the /metrics endpoint, so the stack is complete
+  # rather than a single container.
+  prometheus:
+    image: prom/prometheus:v3.0.1
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=1h"
+    depends_on:
+      api:
+        condition: service_healthy

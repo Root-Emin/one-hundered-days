@@ -1,0 +1,28 @@
+# syntax=docker/dockerfile:1
+#
+# The naive version. Everything about it is wrong in a way that only shows up
+# after the tenth build of the day, or the first security review.
+#
+# Build:
+#   docker build -f Section-16-.../Day-77/dockerfiles/Dockerfile.naive -t day77:naive .
+
+FROM golang:1.26
+
+WORKDIR /src
+
+# Problem 1: source is copied BEFORE dependencies are resolved, so editing one
+# line of Go re-downloads the entire module graph. On a large project that is
+# minutes per build.
+COPY . .
+
+RUN go build -o /app ./Section-16-Containers-And-CI-CD-Docker-multi-stage-builds-GitHub-Actions-and-Go-CI-pipelines/Day-77/cmd/api
+
+# Problem 2: single stage. The image contains the Go toolchain, the module
+# cache, git, and the full source of the application - roughly 900 MB, of
+# which about 8 MB is needed.
+#
+# Problem 3: it runs as root by default.
+#
+# Problem 4: shell-form CMD, so /bin/sh is PID 1 and SIGTERM never reaches the
+# binary. Every deploy kills in-flight requests.
+CMD /app

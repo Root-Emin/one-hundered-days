@@ -1,0 +1,157 @@
+name: release
+
+# Cutting a release from a tag: verify, build reproducibly, publish with
+# checksums. Nothing here is a judgement call except when to push the tag.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write   # to create the release
+  packages: write   # to push the image
+
+env:
+  GO_VERSION: "1.26.6"
+  DAY: Section-20-Capstone-And-Professional-Delivery-Capstone-planning-hardening-deployment-CI-CD-and-final-review/Day-99
+
+jobs:
+  # The tests run AGAIN on the tag, even though they passed on the commit.
+  # A tag can be moved, and a release nobody verified is a release nobody can
+  # trust.
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: vet
+        working-directory: learning/go
+        run: go vet ./${{ env.DAY }}/...
+
+      - name: test
+        working-directory: learning/go
+        run: go test -race -count=1 ./${{ env.DAY }}/...
+
+      - name: govulncheck
+        working-directory: learning/go
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./${{ env.DAY }}/...
+
+  binaries:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [verify]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The commit time is stamped into the binary, and a shallow clone
+          # does not have it.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: build
+        working-directory: learning/go
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+
+          VERSION="${GITHUB_REF_NAME}"
+          COMMIT="$(git rev-parse HEAD)"
+          # The COMMIT time, not the build time: a build timestamp makes the
+          # artefact unreproducible by construction.
+          COMMIT_TIME="$(git show -s --format=%cI HEAD)"
+
+          mkdir -p dist
+
+          for platform in linux/amd64 linux/arm64 darwin/arm64; do
+            GOOS="${platform%/*}"
+            GOARCH="${platform#*/}"
+
+            output="dist/linkr_${VERSION}_${GOOS}_${GOARCH}"
+
+            GOOS="$GOOS" GOARCH="$GOARCH" go build \
+              -trimpath -buildvcs=false \
+              -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.buildTime=${COMMIT_TIME}" \
+              -o "$output" \
+              "./${DAY}/cmd/linkr"
+          done
+
+          # Checksums travel with the artefacts, so a download can be verified
+          # by someone who does not trust the transport.
+          cd dist && sha256sum linkr_* > checksums.txt && cat checksums.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            learning/go/dist/linkr_*
+            learning/go/dist/checksums.txt
+          generate_release_notes: true
+
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [verify]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/linkr
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long
+
+      - name: commit time
+        id: commit
+        run: echo "time=$(git show -s --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: learning/go
+          file: learning/go/${{ env.DAY }}/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
+            COMMIT_TIME=${{ steps.commit.outputs.time }}
+
+      # The digest is what a rollback refers to. A tag can be moved; a digest
+      # cannot, and "roll back to v1.2.3" is only meaningful if v1.2.3 still
+      # means the same bytes.
+      - name: record the digest
+        run: |
+          echo "pushed: ${{ steps.meta.outputs.tags }}"
+          echo "roll back with the digest, not the tag - see docs/RUNBOOK.md"

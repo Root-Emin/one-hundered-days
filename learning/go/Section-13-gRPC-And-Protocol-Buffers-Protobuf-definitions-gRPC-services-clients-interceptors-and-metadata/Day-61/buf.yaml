@@ -1,0 +1,16 @@
+# buf is a protobuf toolchain: it compiles .proto files without a system
+# protoc binary, lints them, and detects breaking changes against a baseline.
+#
+#   go install github.com/bufbuild/buf/cmd/buf@latest
+#   buf lint
+#   buf generate
+#   buf breaking --against '.git#branch=main'
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+breaking:
+  use:
+    - FILE

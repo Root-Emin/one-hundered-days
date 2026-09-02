@@ -1,0 +1,214 @@
+# The contract clients build against.
+#
+# internal/contract parses this file and compares it with httpapi.Routes(), so
+# a route added without a spec entry - or a status code the spec does not
+# mention - fails a test rather than a customer integration.
+openapi: 3.0.3
+
+info:
+  title: Catalog API
+  version: 1.2.0
+  description: |
+    Products and stock reservations.
+
+    Errors always use the same body shape: {"error": "<code>", "message": "..."}.
+    Switch on `error`; `message` is for humans and changes between releases.
+
+servers:
+  - url: http://localhost:8092
+    description: local development
+
+paths:
+  /products:
+    get:
+      summary: List products
+      operationId: listProducts
+      responses:
+        "200":
+          description: Every product, ordered by SKU
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Product"
+    post:
+      summary: Add a product
+      operationId: addProduct
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewProduct"
+      responses:
+        "201":
+          description: The product as stored, with updated_at set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "409":
+          description: A product with this SKU already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /products/{sku}:
+    get:
+      summary: Fetch one product
+      operationId: getProduct
+      parameters:
+        - $ref: "#/components/parameters/SKU"
+      responses:
+        "200":
+          description: The product
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      summary: Remove a product
+      operationId: deleteProduct
+      parameters:
+        - $ref: "#/components/parameters/SKU"
+      responses:
+        "204":
+          description: Deleted; no body
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /products/{sku}/reservations:
+    post:
+      summary: Reserve stock
+      operationId: reserveStock
+      description: |
+        Decrements stock by `quantity`.
+
+        Returns 409 when the stock is insufficient: the request was well
+        formed, the state said no. Nothing is changed in that case.
+      parameters:
+        - $ref: "#/components/parameters/SKU"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quantity]
+              properties:
+                quantity:
+                  type: integer
+                  minimum: 1
+      responses:
+        "200":
+          description: The product with its new stock level
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Insufficient stock; nothing was reserved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /healthz:
+    get:
+      summary: Liveness probe
+      operationId: health
+      responses:
+        "200":
+          description: The process is up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+
+components:
+  parameters:
+    SKU:
+      name: sku
+      in: path
+      required: true
+      description: The product's stock keeping unit
+      schema:
+        type: string
+
+  responses:
+    NotFound:
+      description: No product with that SKU
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InvalidRequest:
+      description: The body failed validation
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Product:
+      type: object
+      required: [sku, name, price_cent, stock, updated_at]
+      properties:
+        sku:
+          type: string
+          example: KB-01
+        name:
+          type: string
+          example: Mechanical keyboard
+        price_cent:
+          type: integer
+          format: int64
+          description: Price in the smallest currency unit; never a float
+          example: 12000
+        stock:
+          type: integer
+          minimum: 0
+        updated_at:
+          type: string
+          format: date-time
+
+    NewProduct:
+      type: object
+      required: [sku, name, price_cent, stock]
+      properties:
+        sku:
+          type: string
+        name:
+          type: string
+        price_cent:
+          type: integer
+          format: int64
+          minimum: 1
+        stock:
+          type: integer
+          minimum: 0
+
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          description: Stable machine-readable code
+          enum: [not_found, conflict, invalid_request, internal]
+        message:
+          type: string
+          description: Human-readable detail; may change between releases

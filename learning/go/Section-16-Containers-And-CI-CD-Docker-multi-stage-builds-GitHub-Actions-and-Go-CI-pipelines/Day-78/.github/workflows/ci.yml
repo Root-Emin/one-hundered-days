@@ -1,0 +1,90 @@
+# The starting workflow: test on every push and pull request.
+#
+# Day 79 grows this into lint + vet + build + integration + coverage. Start
+# here, because a pipeline that runs the tests is already most of the value.
+name: ci
+
+# WHEN it runs.
+#
+# push on main plus pull_request is the usual pair: the PR run gates the
+# merge, the main run confirms the merged result. Without the main trigger, a
+# semantic conflict between two PRs that each passed goes unnoticed.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Least privilege. The default token can write to the repository; a test
+# workflow needs to read it and nothing more.
+permissions:
+  contents: read
+
+# Cancel superseded runs. Pushing three times in a minute should not keep
+# three runners busy - but never cancel a run on main, whose result is the
+# record of what is deployed.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  # One place to change the module directory, referenced by every step.
+  GO_MODULE_DIR: learning/go
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+
+    # A job with no timeout can hang for six hours on a deadlocked test and
+    # burn the whole month's minutes.
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: learning/go
+
+    steps:
+      # Actions are pinned to a major version here for readability. For
+      # anything that touches secrets, pin to a full commit SHA instead: a
+      # compromised tag is a supply-chain attack (see the tj-actions incident).
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          # Read the version from go.mod rather than hardcoding it, so CI can
+          # never test on a different toolchain than the one the module
+          # declares.
+          go-version-file: learning/go/go.mod
+          # setup-go caches the module and build caches, keyed on go.sum.
+          cache: true
+          cache-dependency-path: learning/go/go.sum
+
+      # A separate step so its failure has an obvious name in the UI.
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Verify go.mod is tidy
+        run: |
+          go mod tidy
+          if ! git diff --exit-code -- go.mod go.sum; then
+            echo "::error::go.mod or go.sum is not tidy; run 'go mod tidy' and commit the result"
+            exit 1
+          fi
+
+      - name: Build
+        run: go build ./...
+
+      # -race finds data races that a normal run hides. It is slower, and it
+      # is the single highest-value flag in Go CI.
+      # -shuffle=on runs tests in a random order, exposing hidden dependencies
+      # between them.
+      - name: Test
+        run: go test -race -shuffle=on -count=1 ./...
+
+      # Even on failure: the log is most useful when something went wrong.
+      - name: Report Go environment
+        if: always()
+        run: go version && go env GOOS GOARCH GOVERSION

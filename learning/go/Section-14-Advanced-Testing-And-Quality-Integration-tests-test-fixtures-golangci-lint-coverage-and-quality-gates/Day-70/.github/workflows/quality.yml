@@ -1,0 +1,79 @@
+# The quality pipeline. Day 78/79 build this out into a full CI/CD workflow;
+# this is the testing and linting half.
+#
+# Principles worth copying:
+#   * every step is one make target, so it can be reproduced locally
+#   * the linter runs first: it is the fastest feedback
+#   * tests run with -race, because a data race that only CI sees is worse
+#     than one that fails locally
+#   * the coverage gate runs last and fails the build, so coverage cannot
+#     drift down unnoticed
+name: quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: learning/go/Section-14-Advanced-Testing-And-Quality-Integration-tests-test-fixtures-golangci-lint-coverage-and-quality-gates/Day-70
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: learning/go/go.mod
+          cache: true
+
+      - name: Verify formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "these files are not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: learning/go/Section-14-Advanced-Testing-And-Quality-Integration-tests-test-fixtures-golangci-lint-coverage-and-quality-gates/Day-70
+          args: --timeout=5m
+
+      - name: Vulnerability scan
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      - name: Unit tests
+        run: go test -race -count=1 ./...
+
+      - name: Integration tests
+        run: go test -tags=integration -race -count=1 ./...
+
+      - name: Coverage
+        run: |
+          go test -tags=integration -covermode=atomic -coverprofile=coverage.out ./...
+          go tool cover -func=coverage.out | tail -1
+
+      - name: Coverage gate
+        run: go run ../Day-69/cmd/coveragegate -profile coverage.out -policy coverage-policy.json
+
+      - name: Upload coverage profile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: learning/go/Section-14-.../Day-70/coverage.out
+          if-no-files-found: ignore

@@ -1,0 +1,49 @@
+name: ci
+
+# What runs on every pull request. Every step here is also a make target, so a
+# contributor can reproduce a failure locally with the same flags.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# The default token can write to the repository; this job only needs to read
+# it. Narrowing it is free, and it is the difference between a compromised
+# action stealing code and rewriting it.
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+
+      - name: format
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "these files are not formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: vet
+        run: go vet ./...
+
+      - name: test
+        run: go test -race -count=1 ./...
+
+      # Not -strict: blocking findings fail the build, nits are printed and
+      # left to the reviewer. A gate that fails on style advice gets disabled,
+      # and then the blocking checks go with it.
+      - name: repository audit
+        run: go run ./cmd/repocheck

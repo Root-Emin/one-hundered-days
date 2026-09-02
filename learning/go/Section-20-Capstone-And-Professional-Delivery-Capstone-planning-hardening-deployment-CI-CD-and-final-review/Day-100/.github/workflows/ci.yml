@@ -1,0 +1,305 @@
+name: ci
+
+# What runs on every pull request. Every step is also a make target, so a
+# contributor reproduces a failure locally with the same flags - a pipeline
+# that can only be run by pushing is a pipeline people learn to distrust.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# The default token can write to the repository. This job only reads it.
+# Narrowing is free, and it is the difference between a compromised action
+# stealing code and rewriting it.
+permissions:
+  contents: read
+
+# A new push to the same branch cancels the previous run: nobody needs the
+# results for a commit that has already been replaced.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: "1.26.6"
+  DAY: Section-20-Capstone-And-Professional-Delivery-Capstone-planning-hardening-deployment-CI-CD-and-final-review/Day-100
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+
+    # A matrix, and a deliberately small one. Every cell is a job that costs
+    # minutes and a result someone has to read: this covers the two things that
+    # actually differ - the toolchain version and the operating system's file
+    # system and signal behaviour - and nothing else.
+    #
+    # The previous Go version is included because a library's users are not all
+    # on the newest one, and "works on 1.26" is a claim you can only make by
+    # running it.
+    strategy:
+      # One failing cell must not cancel the others: knowing that ONLY macOS
+      # fails is most of the diagnosis.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        go: ["1.25", "1.26.6"]
+        include:
+          # The full matrix would be four cells; three of them would tell us
+          # the same thing. macOS is here once, on the version we ship.
+          - os: macos-latest
+            go: "1.26.6"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          cache: true
+
+      - name: format
+        working-directory: learning/go
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "these files are not formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: vet
+        working-directory: learning/go
+        run: go vet ./${{ env.DAY }}/...
+
+      # The race detector, not just the tests: a data race that only appears
+      # under load is the most expensive kind of bug to find later.
+      - name: test
+        working-directory: learning/go
+        run: go test -race -count=1 ./${{ env.DAY }}/...
+
+      - name: coverage
+        # Once, on the version we ship. Coverage from three cells is three
+        # numbers that disagree slightly and nobody reconciles.
+        if: matrix.os == 'ubuntu-latest' && matrix.go == '1.26.6'
+        working-directory: learning/go
+        run: |
+          go test -count=1 -coverprofile=coverage.out ./${{ env.DAY }}/...
+          go tool cover -func=coverage.out | tail -1
+
+      - name: upload the coverage profile
+        if: matrix.os == 'ubuntu-latest' && matrix.go == '1.26.6'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: learning/go/coverage.out
+          # An artefact nobody downloads after a fortnight is storage nobody
+          # is paying attention to.
+          retention-days: 14
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: v2.6.2
+          working-directory: learning/go
+          args: --timeout=5m ./${{ env.DAY }}/...
+
+  vulnerabilities:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      # This is the check that would have caught Day 98's five standard-library
+      # findings before a human went looking.
+      - name: govulncheck
+        working-directory: learning/go
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./${{ env.DAY }}/...
+
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # The image is only built once the code is known good. Building it first
+    # would waste minutes on every failing pull request.
+    needs: [test, lint, vulnerabilities]
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      # Pushing only happens on main. A pull request from a fork must never be
+      # able to publish an image - that is a supply-chain compromise with a
+      # green checkmark.
+      - name: log in to the registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/linkr
+          tags: |
+            type=sha,format=long
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+
+      - name: build
+        uses: docker/build-push-action@v6
+        with:
+          context: learning/go
+          file: learning/go/${{ env.DAY }}/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          # Built on every run, pushed only from main.
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
+            COMMIT_TIME=${{ github.event.head_commit.timestamp }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      # The Dockerfile, the compose file and the runbook are assertions in a Go
+      # test. They are text, and text can be checked - which is what makes
+      # deployment configuration testable without a running daemon.
+      - name: deployment artefacts
+        working-directory: learning/go
+        run: go test -count=1 ./${{ env.DAY }}/deploy/...
+
+  # A smoke test against the real binary, not a mock: build it, run it, drive
+  # it, and keep the log as an artefact. This is the job that would have caught
+  # a broken migration or a config default that only fails at startup.
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [test]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: build the release binary
+        working-directory: learning/go
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          go build -trimpath -buildvcs=false \
+            -ldflags="-s -w -X main.version=ci -X main.commit=${GITHUB_SHA}" \
+            -o /tmp/linkr ./${{ env.DAY }}/cmd/linkr
+
+      - name: run it and drive it
+        run: |
+          set -euo pipefail
+
+          KEY=$(/tmp/linkr -issue-key ci -db /tmp/linkr.db | awk '/^key:/ {print $2}')
+
+          LINKR_ENV=production LINKR_ADDR=127.0.0.1:8100 \
+          LINKR_METRICS_ADDR=127.0.0.1:9100 \
+          LINKR_DATABASE_URL=/tmp/linkr.db \
+          LINKR_BASE_URL=http://127.0.0.1:8100 \
+            /tmp/linkr > /tmp/linkr.log 2>&1 &
+
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8100/readyz && break
+            sleep 1
+          done
+
+          curl -fsS -X POST http://127.0.0.1:8100/api/links \
+            -H "Authorization: Bearer $KEY" \
+            -d '{"target":"https://go.dev","code":"cismoke"}'
+
+          # 302 with the right Location, or the job fails.
+          location=$(curl -fsS -o /dev/null -w '%{redirect_url}' http://127.0.0.1:8100/cismoke)
+          test "$location" = "https://go.dev"
+
+          curl -fsS http://127.0.0.1:9100/metrics | grep -q linkr_redirects_total
+
+          # SIGTERM must drain rather than kill.
+          pkill -TERM -f /tmp/linkr
+          sleep 3
+          grep -q '"msg":"stopped"' /tmp/linkr.log
+
+      - name: keep the log
+        # if: always() - a passing smoke test's log is uninteresting, and a
+        # failing one is the whole diagnosis.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-log
+          path: /tmp/linkr.log
+          retention-days: 7
+
+  # One job that summarises the rest, so branch protection has a single check
+  # to require - and adding a job later does not mean editing the protection
+  # rule and forgetting.
+  ci-passed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    needs: [test, lint, vulnerabilities, image, deploy-checks, smoke]
+
+    steps:
+      - name: check the results
+        run: |
+          echo "test:           ${{ needs.test.result }}"
+          echo "lint:           ${{ needs.lint.result }}"
+          echo "vulnerabilities: ${{ needs.vulnerabilities.result }}"
+          echo "image:          ${{ needs.image.result }}"
+          echo "deploy-checks:  ${{ needs.deploy-checks.result }}"
+          echo "smoke:          ${{ needs.smoke.result }}"
+
+          # A skipped job is not a passing job, and treating it as one is how a
+          # required check silently stops checking anything.
+          if [ "${{ contains(needs.*.result, 'failure') }}" = "true" ] ||
+             [ "${{ contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "::error::one or more jobs failed"
+            exit 1
+          fi

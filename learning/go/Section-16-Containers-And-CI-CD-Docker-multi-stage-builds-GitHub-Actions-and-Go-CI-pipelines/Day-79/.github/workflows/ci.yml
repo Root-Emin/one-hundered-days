@@ -1,0 +1,341 @@
+# The full pipeline: what a Go service should run on every change.
+#
+# Shape:
+#
+#   lint ─┐
+#   test ─┼─► build ─► image (main only)
+#   integ ┘
+#
+# lint, test and integration run in PARALLEL - they are independent, and the
+# whole point is fast feedback. build waits for them, because there is no
+# reason to produce an artifact from code that failed its tests.
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  # A manual button, for re-running after a flaky infrastructure failure.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  GO_VERSION_FILE: learning/go/go.mod
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Lint: the fastest job, so it fails first when it is going to fail.
+  # -------------------------------------------------------------------------
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: learning/go/go.mod
+          cache: true
+          cache-dependency-path: learning/go/go.sum
+
+      - name: gofmt
+        working-directory: learning/go
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::these files are not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        working-directory: learning/go
+        run: go vet ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: learning/go
+          args: --timeout=5m
+
+      - name: govulncheck
+        working-directory: learning/go
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  # -------------------------------------------------------------------------
+  # Unit tests, across the versions and platforms that must keep working.
+  # -------------------------------------------------------------------------
+  test:
+    name: test (${{ matrix.os }}, go${{ matrix.go }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+
+    strategy:
+      # false: let every cell finish. Knowing that a failure is macOS-only is
+      # worth more than the minutes saved by cancelling the rest.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        go: ["1.25", "1.26"]
+        # The oldest supported version only needs one platform.
+        exclude:
+          - os: macos-latest
+            go: "1.25"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          cache: true
+          cache-dependency-path: learning/go/go.sum
+
+      - name: Build every package
+        working-directory: learning/go
+        run: go build ./...
+
+      # -race is the highest-value flag in Go CI. -shuffle=on exposes tests
+      # that depend on each other's order.
+      - name: Test
+        working-directory: learning/go
+        run: go test -race -shuffle=on -count=1 ./...
+
+  # -------------------------------------------------------------------------
+  # Integration tests: slower, need real infrastructure, and are marked as
+  # such with a build tag so they never slow the inner loop.
+  # -------------------------------------------------------------------------
+  integration:
+    name: integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # Service containers: GitHub starts these alongside the job and exposes
+    # them on localhost. This is the CI equivalent of testcontainers (Day 67),
+    # and cheaper when the whole job needs one database.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        # Without the health check the job starts querying before Postgres is
+        # listening, and fails intermittently - the classic CI flake.
+        options: >-
+          --health-cmd "pg_isready -U test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://test:test@localhost:5432/testdb?sslmode=disable
+      REDIS_URL: redis://localhost:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: learning/go/go.mod
+          cache: true
+          cache-dependency-path: learning/go/go.sum
+
+      - name: Integration tests
+        working-directory: learning/go
+        run: go test -tags=integration -race -count=1 ./...
+
+  # -------------------------------------------------------------------------
+  # Coverage: measured once, gated, and published where a reviewer can see it.
+  # -------------------------------------------------------------------------
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: read
+      # Needed only to post the summary comment on a PR.
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: learning/go/go.mod
+          cache: true
+          cache-dependency-path: learning/go/go.sum
+
+      - name: Test with coverage
+        working-directory: learning/go
+        run: go test -covermode=atomic -coverprofile=coverage.out ./...
+
+      - name: Coverage summary
+        working-directory: learning/go
+        run: |
+          total=$(go tool cover -func=coverage.out | tail -1 | awk '{print $3}')
+          echo "total coverage: $total"
+          # The job summary is markdown shown on the run page - better than
+          # making a reviewer dig through logs.
+          {
+            echo "## Coverage"
+            echo ""
+            echo "Total: **$total**"
+            echo ""
+            echo '```'
+            go tool cover -func=coverage.out | tail -20
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Artifacts outlive the run: a reviewer can download the profile and
+      # open it in `go tool cover -html`.
+      - name: Upload the coverage profile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-profile
+          path: learning/go/coverage.out
+          retention-days: 14
+          if-no-files-found: warn
+
+  # -------------------------------------------------------------------------
+  # Build the artifact, only once everything above passed.
+  # -------------------------------------------------------------------------
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [lint, test, integration]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Tags are needed for `git describe` to produce a version.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: learning/go/go.mod
+          cache: true
+          cache-dependency-path: learning/go/go.sum
+
+      - name: Build release binaries
+        working-directory: learning/go
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          version=$(git describe --tags --always --dirty)
+          commit=$(git rev-parse --short HEAD)
+          build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          for platform in linux/amd64 linux/arm64 darwin/arm64; do
+            os=${platform%/*}
+            arch=${platform#*/}
+
+            GOOS=$os GOARCH=$arch go build \
+              -trimpath \
+              -ldflags="-s -w -X main.version=$version -X main.commit=$commit -X main.buildTime=$build_time" \
+              -o "dist/app-$os-$arch" \
+              ./Section-16-Containers-And-CI-CD-Docker-multi-stage-builds-GitHub-Actions-and-Go-CI-pipelines/Day-78/cmd/app
+          done
+
+          ls -lh dist/
+
+      - name: Upload the binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries
+          path: learning/go/dist/
+          retention-days: 7
+
+  # -------------------------------------------------------------------------
+  # The container image: built on every change so the Dockerfile cannot rot,
+  # pushed only from main and tags.
+  # -------------------------------------------------------------------------
+  image:
+    name: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [build]
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the registry
+        # Never on a pull request: a fork PR must not get registry credentials.
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/day79
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=sha,format=short
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: learning/go
+          file: learning/go/Section-16-Containers-And-CI-CD-Docker-multi-stage-builds-GitHub-Actions-and-Go-CI-pipelines/Day-77/dockerfiles/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          # Build always, push only from main and tags.
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
+          # The registry cache makes the second build minutes faster.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Scan the image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ghcr.io/${{ github.repository }}/day79:sha-${{ github.sha }}
+          format: table
+          # Fail on what can actually be fixed. Failing on unfixable CVEs
+          # teaches the team to ignore the scanner.
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL

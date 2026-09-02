@@ -1,0 +1,148 @@
+// Inventory service, v1.
+//
+// Everything a consumer needs to call this service is in this file: the
+// messages, the methods, and the behaviour each method promises. Proto
+// comments are API documentation - they are what a team in another language
+// reads before they write a client.
+syntax = "proto3";
+
+// The package carries the major version. A breaking change means publishing
+// inventory.v2 alongside this one, not editing this file: existing clients
+// keep calling v1 until they migrate.
+package inventory.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "example.com/onehundredday/Section-13-gRPC-And-Protocol-Buffers-Protobuf-definitions-gRPC-services-clients-interceptors-and-metadata/Day-62/gen/inventory/v1;inventoryv1";
+
+// InventoryService manages stock levels for the warehouse.
+//
+// Errors follow the standard gRPC codes:
+//   INVALID_ARGUMENT  the request failed validation
+//   NOT_FOUND         no item with that sku exists
+//   ALREADY_EXISTS    the sku is already registered
+//   FAILED_PRECONDITION  the operation is impossible in the item's current state
+//   RESOURCE_EXHAUSTED   the caller is being rate limited
+//
+// Every method is safe to retry EXCEPT AdjustStock, which is not idempotent -
+// see its comment.
+service InventoryService {
+  // GetItem returns one item by sku.
+  //
+  // Errors: NOT_FOUND if the sku is unknown, INVALID_ARGUMENT if it is empty.
+  // Idempotent, safe to retry.
+  rpc GetItem(GetItemRequest) returns (GetItemResponse);
+
+  // ListItems returns a page of items, newest first.
+  //
+  // Pagination is token based rather than offset based: an offset shifts when
+  // rows are inserted, a token does not. An empty next_page_token means the
+  // last page.
+  rpc ListItems(ListItemsRequest) returns (ListItemsResponse);
+
+  // CreateItem registers a new sku.
+  //
+  // Errors: ALREADY_EXISTS if the sku is taken, INVALID_ARGUMENT on bad input.
+  // The client may set request_id to make retries safe: a repeated request
+  // with the same id returns the original result instead of a duplicate.
+  rpc CreateItem(CreateItemRequest) returns (CreateItemResponse);
+
+  // AdjustStock changes the quantity on hand by a delta.
+  //
+  // NOT idempotent: sending the same request twice adjusts twice. Callers that
+  // retry must supply request_id.
+  //
+  // Errors: FAILED_PRECONDITION if the adjustment would make stock negative.
+  rpc AdjustStock(AdjustStockRequest) returns (AdjustStockResponse);
+
+  // DeleteItem removes a sku.
+  //
+  // Idempotent: deleting an already-deleted sku returns OK, not NOT_FOUND, so
+  // a retry after a timeout does not fail.
+  rpc DeleteItem(DeleteItemRequest) returns (DeleteItemResponse);
+}
+
+// Item is the resource this service manages.
+message Item {
+  string sku = 1;
+  string name = 2;
+  int32 quantity = 3;
+  string location = 4;
+  google.protobuf.Timestamp updated_at = 5;
+
+  // Added in v1.2. Old servers ignore it, old clients never see it: adding a
+  // field is always backward compatible as long as the number is new.
+  optional string barcode = 6;
+}
+
+// Request and response messages are separate types per method, even when they
+// would be identical today. Sharing them means a field added for one method
+// silently appears in another's contract.
+message GetItemRequest {
+  string sku = 1;
+}
+
+message GetItemResponse {
+  Item item = 1;
+}
+
+message ListItemsRequest {
+  // Maximum items to return. The server may return fewer. 0 means "server
+  // default"; values above the server maximum are clamped, not rejected.
+  int32 page_size = 1;
+
+  // Opaque token from a previous response. Clients must not parse it.
+  string page_token = 2;
+
+  // Optional filter: only items in this location.
+  string location = 3;
+}
+
+message ListItemsResponse {
+  repeated Item items = 1;
+
+  // Empty when there are no further pages.
+  string next_page_token = 2;
+  int32 total_size = 3;
+}
+
+message CreateItemRequest {
+  string sku = 1;
+  string name = 2;
+  int32 quantity = 3;
+  string location = 4;
+
+  // Optional idempotency key. Two requests with the same id produce one item.
+  string request_id = 5;
+}
+
+message CreateItemResponse {
+  Item item = 1;
+}
+
+message AdjustStockRequest {
+  string sku = 1;
+
+  // Positive to receive stock, negative to ship it. Zero is INVALID_ARGUMENT.
+  int32 delta = 2;
+  string reason = 3;
+  string request_id = 4;
+}
+
+message AdjustStockResponse {
+  Item item = 1;
+
+  // The quantity before the adjustment, so a client can log the transition
+  // without a second call.
+  int32 previous_quantity = 2;
+}
+
+message DeleteItemRequest {
+  string sku = 1;
+}
+
+message DeleteItemResponse {
+  // Whether a row was actually removed. False means it was already gone,
+  // which is still OK - see the method comment.
+  bool deleted = 1;
+}

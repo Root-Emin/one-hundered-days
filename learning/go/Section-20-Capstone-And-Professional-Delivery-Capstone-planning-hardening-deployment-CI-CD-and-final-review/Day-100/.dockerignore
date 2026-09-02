@@ -1,0 +1,16 @@
+# Everything the build does not need. A smaller context is a faster build and
+# a smaller chance of shipping something by accident - a .env, a database, a
+# key.
+
+.git
+.github
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/dist
+**/coverage.out
+**/*_test.go
+**/testdata
+.envrc
+.envrc.local
+**/node_modules

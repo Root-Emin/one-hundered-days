@@ -1,0 +1,34 @@
+# The build context is uploaded to the daemon before anything runs. Keeping it
+# small makes builds faster, and keeps things that must never be in an image
+# out of it.
+
+# Version control and CI
+.git
+.github
+.gitignore
+
+# Local databases and build output created by running the days
+data/
+*.db
+*.db-wal
+*.db-shm
+coverage.out
+*.test
+/bin
+/out
+
+# Editor and OS noise
+.vscode
+.idea
+.DS_Store
+
+# Secrets - the important entry. A .env copied into an image is a secret in
+# every registry that image is pushed to, forever.
+.env
+.env.*
+*.pem
+*.key
+
+# Documentation does not belong in a runtime image
+*.md
+docs/

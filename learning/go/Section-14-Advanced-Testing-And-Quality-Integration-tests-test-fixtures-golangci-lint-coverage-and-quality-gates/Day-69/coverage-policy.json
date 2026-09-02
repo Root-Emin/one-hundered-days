@@ -1,0 +1,27 @@
+{
+  "total_minimum": 55.0,
+  "gates": [
+    {
+      "path_suffix": "internal/pricing",
+      "minimum": 80.0,
+      "reason": "money leaves the building through this package"
+    },
+    {
+      "path_suffix": "internal/coverage",
+      "minimum": 60.0,
+      "reason": "the gate itself must be trustworthy"
+    }
+  ],
+  "ignore": [
+    {
+      "path_suffix": "cmd/coveragegate",
+      "minimum": 0,
+      "reason": "a thin main: its logic lives in internal/coverage, which is gated"
+    },
+    {
+      "path_suffix": "Day-69",
+      "minimum": 0,
+      "reason": "the day's runner program is documentation, not shipped code"
+    }
+  ]
+}

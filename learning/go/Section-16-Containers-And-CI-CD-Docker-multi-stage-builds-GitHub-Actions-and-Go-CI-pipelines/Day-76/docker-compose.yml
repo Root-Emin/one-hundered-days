@@ -1,0 +1,50 @@
+# Local run: one command, ports and environment in one readable file.
+#
+#   cd learning/go
+#   docker compose -f Section-16-.../Day-76/docker-compose.yml up --build
+#
+# The build context is the module root, so the Dockerfile can see go.mod.
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: Section-16-Containers-And-CI-CD-Docker-multi-stage-builds-GitHub-Actions-and-Go-CI-pipelines/Day-76/Dockerfile
+      args:
+        VERSION: "0.1.0-local"
+        COMMIT: "local"
+    image: day76-api:dev
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      SHUTDOWN_TIMEOUT: "15s"
+
+    # docker stop sends SIGTERM and waits this long before SIGKILL. It must be
+    # LONGER than the application's own shutdown budget, or the drain is cut
+    # off half way.
+    stop_grace_period: 20s
+
+    # The health check runs inside the container - and distroless has no
+    # shell and no curl, so it calls the binary's own probe mode. That is the
+    # usual pattern for minimal images.
+    healthcheck:
+      test: ["CMD", "/api", "-healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+    # Defence in depth, all of it free:
+    read_only: true                # the filesystem is immutable at runtime
+    security_opt:
+      - no-new-privileges:true     # setuid binaries cannot escalate
+    cap_drop:
+      - ALL                        # a web service needs no Linux capabilities
+
+    deploy:
+      resources:
+        limits:
+          # Without a memory limit, one leaking container can take down the
+          # whole host.
+          memory: 128M
+          cpus: "0.5"

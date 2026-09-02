@@ -1,0 +1,82 @@
+# golangci-lint configuration, checked into the repository so a developer's
+# machine and CI apply exactly the same rules.
+#
+#   golangci-lint run            # the whole module
+#   golangci-lint run ./...      # same, explicit
+#   golangci-lint run --fix      # apply the fixes it can make itself
+#   golangci-lint fmt            # formatting only
+#
+# Config format: golangci-lint v2.
+version: "2"
+
+run:
+  timeout: 5m
+  # Lint test files too: a bug in a test is a bug that lies to you.
+  tests: true
+
+linters:
+  # "default: none" plus an explicit list, rather than enable/disable on top of
+  # a moving default set. When the tool ships a new linter, this file decides
+  # whether it runs - not the release notes.
+  default: none
+  enable:
+    # --- the four from today's lesson ---
+    - govet        # the standard vet suite: printf verbs, lock copying, shadowing
+    - staticcheck  # bugs, dead code, deprecated APIs, simplifications
+    - errcheck     # an unchecked error is a bug waiting for production
+    - ineffassign  # a value assigned and never used is usually a typo
+
+    # --- a small, high-signal extension ---
+    - unused       # unused private identifiers
+    - bodyclose    # an unclosed HTTP response body leaks a connection
+    - rowserrcheck # rows.Err() forgotten after a database query
+    - noctx        # HTTP requests built without a context cannot be cancelled
+    - errorlint    # err == ErrX instead of errors.Is; %v instead of %w
+    - copyloopvar  # detects the (now fixed) loop variable capture idiom
+    - misspell     # comments are documentation
+
+  settings:
+    errcheck:
+      # Checking the error of these is noise, not diligence.
+      exclude-functions:
+        - (*strings.Builder).WriteString
+        - (*strings.Builder).WriteRune
+        - (*bytes.Buffer).WriteString
+
+    staticcheck:
+      checks:
+        - all
+        # ST1000: not every package needs a doc comment in this repository's
+        # per-day layout. Turned off deliberately, with the reason written
+        # down - which is the only acceptable way to disable a check.
+        - -ST1000
+
+    govet:
+      enable-all: true
+      disable:
+        # fieldalignment optimises struct memory layout. Real, but it fights
+        # readability on every struct in the codebase; enable it only where
+        # allocation counts (see Day 87).
+        - fieldalignment
+
+  exclusions:
+    rules:
+      # examples/before exists to FAIL the linter: it is the teaching material
+      # for what each rule catches. Excluding it here is not "suppressing a
+      # finding" - the whole file is the finding.
+      - path: examples/before/
+        linters:
+          - errcheck
+          - staticcheck
+          - govet
+          - ineffassign
+          - unused
+          - bodyclose
+          - errorlint
+          - noctx
+          - misspell
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
